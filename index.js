@@ -3,10 +3,49 @@
 var Promise = require('bluebird');
 var request = require('request');
 var xml2js = Promise.promisifyAll(require('xml2js'));
-var util = require('util');
+var pg = require('pg');
 
+// Time the script starts
 var startTime = (new Date()).getTime();
+
+// Helper var indicating there are no more profiles to sync from the API
+var apiSyncDone = false;
+
+// Helper var tracking how many have been read from the API
 var profilesRead = 0;
+
+// Helper var tracking how many have been processed by the DB
+var profilesProcessed = 0;
+
+// DB client and connection string
+var dbClient;
+var dbConnString = 'postgres://localhost/illuminate';
+
+// Get a pg client from the connection pool
+pg.connect(dbConnString, function(err, client, done) {
+
+  var handleError = function(err) {
+    if (! err) return false;
+
+    // An error occurred, remove the client from the connection pool.
+    // A truthy value passed to done will remove the connection from the pool
+    // instead of simply returning it to be reused.
+    // In this case, if we have successfully received a client (truthy)
+    // then it will be removed from the pool.
+    if (client) {
+      done(client);
+    }
+
+    console.log('An error occurred');
+    return true;
+  };
+
+  if (handleError(err)) return;
+
+  // Start API sync at page 1
+  dbClient = client;
+  getProfiles(1);
+});
 
 var baseUrl = 'https://secure.mcommons.com/api/profiles';
 var options = {
@@ -16,33 +55,47 @@ var options = {
   }
 };
 
-var getProfiles = function(pageNumber) {
-  var url = baseUrl + '?page=' + pageNumber;
-  request.get(url, options, callback);
+/**
+ * API request to get a page of profiles.
+ *
+ * @param page Specifies page to query for
+ */
+var getProfiles = function(page) {
+  var url = baseUrl + '?page=' + page;
+  request.get(url, options, onGetProfiles);
 }
 
-var callback = function(err, response, body) {
+/**
+ * Callback for the get-profiles API request.
+ *
+ * @param err
+ * @param response
+ * @param body
+ */
+var onGetProfiles = function(err, response, body) {
   if (err) {
     console.log(err);
   }
 
   if (response.statusCode == 200) {
+    // Convert xml response to js object
     xml2js.parseStringAsync(body)
       .then(function(result) {
         var numProfiles = parseInt(result.response.profiles[0].$.num);
         var page = parseInt(result.response.profiles[0].$.page);
 
         if (numProfiles == 0) {
-          let endTime = (new Date()).getTime();
-          let duration = (endTime - startTime) / 1000;
-          console.log('Script time: ' + duration);
+          apiSyncDone = true;
           return;
         }
 
         var profiles = result.response.profiles[0].profile;
 
         for (var i = 0; i < profiles.length; i++) {
+          profilesRead++;
+
           let profile = profiles[i];
+          let id = profile.$.id;
           let first = profile.first_name[0];
           let last = profile.last_name[0];
           let phone = profile.phone_number[0];
@@ -58,35 +111,69 @@ var callback = function(err, response, body) {
           let createdAt = profile.created_at[0];
           let updatedAt = profile.updated_at[0];
 
-          // console.log('-----');
-          // console.log('  first: ' + first);
-          // console.log('  last: ' + last);
-          // console.log('  phone: ' + phone);
-          // console.log('  city: ' + city);
-          // console.log('  state: ' + state);
+          let outAtDate = outAt.length > 0 ? new Date(outAt) : '';
+          let createdAtDate = createdAt.length > 0 ? new Date(createdAt) : '';
+          let updatedAtDate = updatedAt.length > 0 ? new Date(updatedAt) : '';
+          // console.log('  -- first:%s | last:%s | phone:%s | city:%s | state:%s | outAt:%s | outSource:%s | sourceType: %s | createdAt:%s | updatedAt:%s',
+          //     first, last, phone, city, state, outAtDate, outSource, sourceType, createdAtDate, updatedAtDate);
 
-          outAt = outAt.length > 0 ? new Date(outAt) : '---';
-          // console.log('  outAt: ' + outAt.toString());
-          // console.log('  outSource: ' + outSource);
-          // console.log('  sourceType: ' + sourceType);
+          let numValues = 5;
+          let columnsFormat = 'id, source, opted_out_source, city, state';
+          let valuesFormat = '$1, $2, $3, $4, $5';
+          let values = [id, sourceType, outSource, city, state];
 
-          createdAt = createdAt.length > 0 ? new Date(createdAt) : '---';
-          // console.log('  createdAt: ' + createdAt);
+          if (createdAt.length > 0) {
+            numValues++;
+            columnsFormat += ', created_at';
+            valuesFormat += ', $' + numValues;
+            values[values.length] = createdAt;
+          }
 
-          updatedAt = updatedAt.length > 0 ? new Date(updatedAt) : '---';
-          // console.log('  updatedAt: ' + updatedAt);
+          if (outAt.length > 0) {
+            numValues++;
+            columnsFormat += ', opted_out_at';
+            valuesFormat += ', $' + numValues;
+            values[values.length] = outAt;
+          }
 
-          profilesRead++;
-          console.log('profile #: ' + profilesRead);
+          let query = 'INSERT INTO profiles' +
+              ' (' + columnsFormat + ')' +
+              ' VALUES (' + valuesFormat + ')';
+
+          // Insert values into the database
+          dbClient.query(query, values, onDbQuery);
         }
 
+        // Get the next page of profiles
         page++;
         getProfiles(page);
       });
   }
   else {
-    console.log('code: ' + response.statusCode);
+    console.log('Abort on error code: ' + response.statusCode);
   }
 };
 
-getProfiles(1);
+/**
+ * DB insert query callback.
+ *
+ * @param err
+ * @param result
+ */
+var onDbQuery = function(err, result) {
+  profilesProcessed++;
+
+  if (err) {
+    console.log('[%d] %s', profilesProcessed, err.detail);
+  }
+  else {
+    console.log('[%d] %s %d', profilesProcessed, result.command, result.rowCount);
+  }
+
+  // @todo There's probably a more elegant way of finding out we're done
+  if (apiSyncDone && profilesRead == profilesProcessed) {
+    let endTime = (new Date()).getTime();
+    let duration = (endTime - startTime) / 1000;
+    console.log('-- DONE -- Script time: ' + duration + ' seconds');
+  }
+}
