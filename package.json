@@ -1,0 +1,17 @@
+{
+  "name": "illuminate",
+  "version": "0.1.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "jonuy <jonathanjuy@gmail.com> (http://jonuy.com/)",
+  "license": "ISC",
+  "dependencies": {
+    "bluebird": "^3.3.3",
+    "request": "^2.69.0",
+    "xml2js": "^0.4.16"
+  }
+}
