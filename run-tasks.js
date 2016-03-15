@@ -25,8 +25,8 @@ postgres.connectAsync(connectionString)
     subscriberTasks.queryNewSubscribers(today, '3 months');
 
     var retentionTasks = new RetentionTasks(client);
-    retentionTasks.triangleChartByWeek();
-    retentionTasks.triangleChartByMonth();
+    retentionTasks.triangleChart('week', 12);
+    retentionTasks.triangleChart('month', 6);
   })
   .catch(function(err) {
     console.log(err);
