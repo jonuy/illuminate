@@ -20,6 +20,7 @@ var profilesProcessed = 0;
 // DB client and connection string
 var dbClient;
 var dbConnString = 'postgres://localhost/illuminate';
+var dbTableName = 'profiles';
 
 // Get a pg client from the connection pool
 pg.connect(dbConnString, function(err, client, done) {
@@ -136,7 +137,7 @@ var onGetProfiles = function(err, response, body) {
             values[values.length] = outAt;
           }
 
-          let query = 'INSERT INTO profiles' +
+          let query = 'INSERT INTO ' + dbTableName +
               ' (' + columnsFormat + ')' +
               ' VALUES (' + valuesFormat + ')';
 
