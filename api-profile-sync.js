@@ -87,6 +87,7 @@ var onGetProfiles = function(err, response, body) {
 
         if (numProfiles == 0) {
           apiSyncDone = true;
+          finishIfDone();
           return;
         }
 
@@ -118,23 +119,20 @@ var onGetProfiles = function(err, response, body) {
           // console.log('  -- first:%s | last:%s | phone:%s | city:%s | state:%s | outAt:%s | outSource:%s | sourceType: %s | createdAt:%s | updatedAt:%s',
           //     first, last, phone, city, state, outAtDate, outSource, sourceType, createdAtDate, updatedAtDate);
 
-          let numValues = 5;
-          let columnsFormat = 'id, source, opted_out_source, city, state';
-          let valuesFormat = '$1, $2, $3, $4, $5';
-          let values = [id, sourceType, outSource, city, state];
+          let columnsFormat = 'id, phone_number, source, opted_out_source, city, state';
+          let valuesFormat = '$1, $2, $3, $4, $5, $6';
+          let values = [id, phone, sourceType, outSource, city, state];
 
           if (createdAt.length > 0) {
-            numValues++;
-            columnsFormat += ', created_at';
-            valuesFormat += ', $' + numValues;
             values[values.length] = createdAt;
+            columnsFormat += ', created_at';
+            valuesFormat += ', $' + values.length;
           }
 
           if (outAt.length > 0) {
-            numValues++;
-            columnsFormat += ', opted_out_at';
-            valuesFormat += ', $' + numValues;
             values[values.length] = outAt;
+            columnsFormat += ', opted_out_at';
+            valuesFormat += ', $' + values.length;
           }
 
           let query = 'INSERT INTO ' + dbTableName +
@@ -171,10 +169,17 @@ var onDbQuery = function(err, result) {
     console.log('[%d] %s %d', profilesProcessed, result.command, result.rowCount);
   }
 
-  // @todo There's probably a more elegant way of finding out we're done
+  finishIfDone();
+}
+
+/**
+ * Clean up and end the process if everything's done.
+ */
+var finishIfDone = function() {
   if (apiSyncDone && profilesRead == profilesProcessed) {
     let endTime = (new Date()).getTime();
     let duration = (endTime - startTime) / 1000;
     console.log('-- DONE -- Script time: ' + duration + ' seconds');
+    process.exit(0);
   }
-}
+};
