@@ -2,8 +2,9 @@
 
 var Promise = require('bluebird');
 var postgres = Promise.promisifyAll(require('pg'));
-var SubscriberTasks = require('./data_tasks/subscribers.js');
+var BehaviorTasks = require('./data_tasks/behavior.js');
 var RetentionTasks = require('./data_tasks/retention.js');
+var SubscriberTasks = require('./data_tasks/subscribers.js');
 
 var connectionString = 'postgres://localhost/illuminate';
 postgres.connectAsync(connectionString)
@@ -27,6 +28,11 @@ postgres.connectAsync(connectionString)
     var retentionTasks = new RetentionTasks(client);
     retentionTasks.triangleChart('week', 12);
     retentionTasks.triangleChart('month', 6);
+
+    var behaviorTasks = new BehaviorTasks(client);
+
+    var today = new Date();
+    behaviorTasks.dailyInteractions(today, 30);
   })
   .catch(function(err) {
     console.log(err);
