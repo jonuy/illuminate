@@ -5,6 +5,7 @@ var postgres = Promise.promisifyAll(require('pg'));
 var BehaviorTasks = require('./data_tasks/behavior.js');
 var RetentionTasks = require('./data_tasks/retention.js');
 var SubscriberTasks = require('./data_tasks/subscribers.js');
+var helpers = require('./data_tasks/helpers.js');
 
 var connectionString = 'postgres://localhost/illuminate';
 postgres.connectAsync(connectionString)
@@ -17,10 +18,7 @@ postgres.connectAsync(connectionString)
     subscriberTasks.queryTotal();
 
     var date = new Date();
-    var year = date.getFullYear();
-    var month = date.getMonth() + 1;
-    var day = date.getDate();
-    var today = year + '-' + month + '-' + day;
+    var today = helpers.formatDateForQuery(date);
     subscriberTasks.queryNewSubscribers(today, '7 days');
     subscriberTasks.queryNewSubscribers(today, '1 month');
     subscriberTasks.queryNewSubscribers(today, '3 months');
@@ -30,9 +28,7 @@ postgres.connectAsync(connectionString)
     retentionTasks.triangleChart('month', 6);
 
     var behaviorTasks = new BehaviorTasks(client);
-
-    var today = new Date();
-    behaviorTasks.dailyInteractions(today, 30);
+    behaviorTasks.dailyInteractions(date, 30);
   })
   .catch(function(err) {
     console.log(err);
