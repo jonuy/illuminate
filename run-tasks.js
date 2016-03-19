@@ -6,6 +6,49 @@ var BehaviorTasks = require('./data_tasks/behavior.js');
 var RetentionTasks = require('./data_tasks/retention.js');
 var SubscriberTasks = require('./data_tasks/subscribers.js');
 var helpers = require('./data_tasks/helpers.js');
+var argv = require('minimist')(process.argv.slice(2));
+
+/**
+ * If process is run with --help, show this.
+ */
+if (argv.help) {
+  console.log('Specify tasks with the --task option. By default, all will run.');
+  console.log();
+  console.log('  ex: node run-tasks.js --task new-subscribers --task total-subscribers');
+  console.log();
+  console.log('Available tasks:');
+  console.log();
+  console.log('  active-users       Total active users in recent past');
+  console.log('  cohort-analysis    Churn/retentation data');
+  console.log('  daily-interactions # of interactions daily');
+  console.log('  subscribers        Runs both new-subscribers and total-subscribers');
+  console.log('  new-subscribers    Queries for new recent subscribers');
+  console.log('  total-subscribers  Total # of current subscribers');
+  console.log();
+  process.exit(0);
+}
+
+/**
+ * If the command line `task` arg is set, check if it matches the `name`
+ * parameter. Otherwise return true.
+ *
+ * @param name String
+ * @return boolean
+ */
+function argsEmptyOrSetTo(name) {
+  if (typeof argv.task === 'undefined') {
+    return true;
+  }
+  else if (typeof argv.task === 'string') {
+    return argv.task == name;
+  }
+  else if (argv.task instanceof Array) {
+    return argv.task.indexOf(name) >= 0;
+  }
+  else {
+    return true;
+  }
+}
 
 var connectionString = 'postgres://localhost/illuminate';
 postgres.connectAsync(connectionString)
@@ -14,23 +57,35 @@ postgres.connectAsync(connectionString)
       throw new Error;
     }
 
-    var subscriberTasks = new SubscriberTasks(client);
-    subscriberTasks.queryTotal();
-
     var date = new Date();
     var today = helpers.formatDateForQuery(date);
-    subscriberTasks.queryNewSubscribers(today, '7 days');
-    subscriberTasks.queryNewSubscribers(today, '1 month');
-    subscriberTasks.queryNewSubscribers(today, '3 months');
-
-    var retentionTasks = new RetentionTasks(client);
-    retentionTasks.triangleChart('week', 12);
-    retentionTasks.triangleChart('month', 6);
-
     var behaviorTasks = new BehaviorTasks(client);
-    behaviorTasks.dailyInteractions(date, 7);
-    behaviorTasks.totalActiveUsers(date, 9, 'week');
-    behaviorTasks.totalActiveUsers(date, 14, 'day');
+    var retentionTasks = new RetentionTasks(client);
+    var subscriberTasks = new SubscriberTasks(client);
+
+    if (argsEmptyOrSetTo('total-subscribers') || argsEmptyOrSetTo('subscribers')) {
+      subscriberTasks.queryTotal();
+    }
+
+    if (argsEmptyOrSetTo('new-subscribers') || argsEmptyOrSetTo('subscribers')) {
+      subscriberTasks.queryNewSubscribers(today, '7 days');
+      subscriberTasks.queryNewSubscribers(today, '1 month');
+      subscriberTasks.queryNewSubscribers(today, '3 months');
+    }
+
+    if (argsEmptyOrSetTo('cohort-analysis')) {
+      retentionTasks.triangleChart('week', 12);
+      retentionTasks.triangleChart('month', 6);
+    }
+
+    if (argsEmptyOrSetTo('daily-interactions')) {
+      behaviorTasks.dailyInteractions(date, 7);
+    }
+
+    if (argsEmptyOrSetTo('active-users')) {
+      behaviorTasks.totalActiveUsers(date, 9, 'week');
+      behaviorTasks.totalActiveUsers(date, 14, 'day');
+    }
   })
   .catch(function(err) {
     console.log(err);
