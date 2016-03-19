@@ -28,7 +28,9 @@ postgres.connectAsync(connectionString)
     retentionTasks.triangleChart('month', 6);
 
     var behaviorTasks = new BehaviorTasks(client);
-    behaviorTasks.dailyInteractions(date, 30);
+    behaviorTasks.dailyInteractions(date, 7);
+    behaviorTasks.totalActiveUsers(date, 9, 'week');
+    behaviorTasks.totalActiveUsers(date, 14, 'day');
   })
   .catch(function(err) {
     console.log(err);

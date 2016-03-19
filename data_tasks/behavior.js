@@ -27,10 +27,10 @@ class BehaviorTasks {
     var dbClient = this.client;
     var numProcessed = 0;
 
-    var dataResults = [];
+    var queryResults = [];
 
     // Executes queries to get the info we want for each day and stores the
-    // results in `dataResults`
+    // results in `queryResults`
     function theDailyQuery(date) {
       let totalReplies = 0;
       let totalRepliesM = 0;
@@ -83,7 +83,7 @@ class BehaviorTasks {
           console.log(strDate + ': Total unique users: ' + totalUniqueUsers);
           console.log(strDate + ': Avg replies: ' + avgReplies);
 
-          dataResults[dataResults.length] = {
+          queryResults[queryResults.length] = {
             date: strDate,
             replies: totalReplies,
             m: totalRepliesM,
@@ -105,8 +105,8 @@ class BehaviorTasks {
     // Run when all queries are finished processing
     function onFinish() {
       // Sort in descending order
-      dataResults.sort(function(a,b) {
-        return new Date(b.date).getTime() - new Date(a.date).getTime() ;
+      queryResults.sort(function(a,b) {
+        return new Date(b.date).getTime() - new Date(a.date).getTime();
       });
 
       let labels = [
@@ -118,13 +118,13 @@ class BehaviorTasks {
         ];
 
       let rows = [];
-      for (let i = 0; i < dataResults.length; i++) {
+      for (let i = 0; i < queryResults.length; i++) {
         rows[i] = [
-          dataResults[i].date,
-          dataResults[i].replies,
-          dataResults[i].m,
-          dataResults[i].users,
-          dataResults[i].avgReplies
+          queryResults[i].date,
+          queryResults[i].replies,
+          queryResults[i].m,
+          queryResults[i].users,
+          queryResults[i].avgReplies
           ];
       }
 
@@ -138,6 +138,82 @@ class BehaviorTasks {
       let tmp = new Date(endDate.getTime());
       tmp.setDate(tmp.getDate() - i);
       theDailyQuery(tmp);
+    }
+  }
+
+  /**
+   * Queries for the total number of users who have been active over a period
+   * of time.
+   *
+   * @param endDate Date to start querying back from
+   * @param numIntervals Number of intervals to query
+   * @param interval String. ex: 'week'
+   * @param done Callback when complete
+   */
+  totalActiveUsers(endDate, numIntervals, interval, done) {
+    var dbClient = this.client;
+    var date = helpers.formatDateForQuery(endDate);
+    var numProcessed = 0;
+    var queryResults = [];
+
+    console.log('Running query for total active users: %s - %d %s',
+      endDate, numIntervals, interval);
+
+    function theQuery(range) {
+      let query = "SELECT COUNT(*) FROM " +
+        "(SELECT DISTINCT ON (phone_number) * FROM messages " +
+          "WHERE received_at > " +
+            "(date '" + date + "' - interval '" + range + " " + interval + "') " +
+          "AND received_at <= date '" + date + "' " +
+          "AND type='reply') AS tmp";
+
+      dbClient.queryAsync(query)
+        .then(function(results) {
+          queryResults[queryResults.length] = {
+            'range': range,
+            'count': parseInt(results.rows[0].count)
+          };
+          process.stdout.write('.');
+
+          numProcessed++;
+          if (numProcessed == numIntervals) {
+            onFinish();
+          }
+        })
+        .catch(function(error) {
+          console.log(error);
+          process.exit(1);
+        });
+    }
+
+    // Run when all queries are finished processing
+    function onFinish() {
+      // Sort in ascending order
+      queryResults.sort(function(a,b) {
+        return a.range - b.range;
+      });
+
+      let labels = [
+        'From ' + date,
+        'Users'
+        ];
+
+      let rows = [];
+      for (let i = 0; i < queryResults.length; i++) {
+        rows[i] = [
+          'Active in Last ' + queryResults[i].range + ' ' + interval + 's',
+          queryResults[i].count
+          ];
+      }
+
+      let filename = helpers.formatDateForQuery(endDate) +
+        '-activeusers-past-' + numIntervals + '-' + interval + '.csv';
+      helpers.writeToCsv(labels, rows, filename, done);
+    }
+
+    // Execute query over the set number of intervals
+    for (let i = 1 ; i <= numIntervals; i++) {
+      theQuery(i);
     }
   }
 
