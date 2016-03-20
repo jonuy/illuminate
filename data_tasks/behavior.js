@@ -15,6 +15,211 @@ class BehaviorTasks {
   }
 
   /**
+   * Queries for weekly cohorts and how active they are from one week to the next.
+   *
+   * @param fromDate Date to query back from for cohorts
+   * @param done Callback on complete
+   */
+  cohortInteractionsOverTime(fromDate, done) {
+    const NUM_COHORTS = 9;
+    const dbClient = this.client;
+    var numProcessed = 0;
+    var queryResults = [];
+
+    var maxRows = 0;
+    var tmp = NUM_COHORTS;
+    while (tmp > 0) {
+      maxRows += tmp;
+      tmp--;
+    }
+
+    function theQuery(cohortDate, weekNum) {
+      let strDate = helpers.formatDateForQuery(cohortDate);
+      let cohortUsers = 0;
+      let totalActive = 0; // # of the cohort active from start to the weekNum
+      let weeklyUsers = 0;
+      let weeklyMessages = 0;
+
+      let conditionCohortUsers =
+        "profiles.created_at >= date_trunc('week', date '" + strDate + "') " +
+        "AND profiles.created_at < (date_trunc('week', date '" + strDate + "') + interval '1 week')";
+
+      let conditionValidReply =
+        "messages.type='reply' AND LOWER(messages.body)=LOWER('M')";
+
+      let conditionReplyTime =
+        "messages.received_at <= profiles.created_at + interval '" + weekNum + " week' " +
+        "AND messages.received_at > profiles.created_at + interval '" + (weekNum-1) + " week'";
+
+      // @todo Running this more than once is redundant. Consider refactoring so
+      // this is only run once.
+      let queryUsers = "SELECT COUNT(*) FROM profiles WHERE " + conditionCohortUsers;
+
+      let queryWeeklyUsers = "SELECT COUNT(*) FROM " +
+        "(SELECT DISTINCT ON (phone_number) * FROM " +
+          "(SELECT profiles.phone_number FROM profiles INNER JOIN messages " +
+            "ON profiles.phone_number=messages.phone_number " +
+            "WHERE " + conditionCohortUsers + " " +
+            "AND " + conditionValidReply + " " +
+            "AND " + conditionReplyTime +
+          ") AS tmp" +
+        ") AS tmp2";
+
+      let queryTotalActive = "SELECT COUNT(*) FROM " +
+        "(SELECT DISTINCT ON (phone_number) * FROM " +
+          "(SELECT profiles.phone_number FROM profiles INNER JOIN messages " +
+            "ON profiles.phone_number=messages.phone_number " +
+            "WHERE " + conditionCohortUsers + " " +
+            "AND " + conditionValidReply + " " +
+            "AND messages.received_at <= profiles.created_at + interval '" + weekNum + " week'" +
+          ") AS tmp" +
+        ") AS tmp2";
+
+      let queryWeeklyMessages = "SELECT COUNT(*) FROM ( " +
+        "SELECT FROM profiles INNER JOIN messages " +
+          "ON profiles.phone_number=messages.phone_number " +
+          "WHERE " + conditionCohortUsers + " " +
+          "AND " + conditionValidReply + " " +
+          "AND " + conditionReplyTime +
+        ") AS tmp";
+
+      dbClient.queryAsync(queryUsers)
+        .then(function(results) {
+          cohortUsers = parseInt(results.rows[0].count);
+        })
+        .then(function() {
+          return dbClient.queryAsync(queryWeeklyUsers);
+        })
+        .then(function(results) {
+          weeklyUsers = parseInt(results.rows[0].count);
+        })
+        .then(function() {
+          return dbClient.queryAsync(queryTotalActive);
+        })
+        .then(function(results) {
+          totalActive = parseInt(results.rows[0].count);
+        })
+        .then(function() {
+          return dbClient.queryAsync(queryWeeklyMessages);
+        })
+        .then(function(results) {
+          weeklyMessages = parseInt(results.rows[0].count);
+
+          process.stdout.write('.');
+
+          let useIndex = queryResults.length;
+          for (let i = 0; i < queryResults.length; i++) {
+            if (queryResults[i].date == strDate) {
+              useIndex = i;
+              break;
+            }
+          }
+
+          if (useIndex == queryResults.length) {
+            queryResults[useIndex] = {
+              date: strDate,
+              cohortSize: cohortUsers
+            };
+          }
+
+          if (typeof queryResults[useIndex].weeklyData === 'undefined') {
+            queryResults[useIndex].weeklyData = [];
+          }
+
+          let weeklyDataLength = queryResults[useIndex].weeklyData.length;
+          queryResults[useIndex].weeklyData[weeklyDataLength] = {
+            week: weekNum,
+            activeUsers: weeklyUsers,
+            totalActive: totalActive,
+            pctOfCohort: ((weeklyUsers / cohortUsers) * 100).toFixed(2),
+            msgsSent: weeklyMessages,
+            avgMsgsSent: (weeklyMessages / weeklyUsers).toFixed(2)
+          };
+
+          numProcessed++;
+          if (numProcessed == maxRows) {
+            onFinish();
+          }
+        })
+        .catch(function(error) {
+          console.log(error);
+          process.exit(1);
+        });
+    }
+
+    // Run when all queries are finished processing
+    function onFinish() {
+
+      // First order by cohort date ascending
+      queryResults.sort(function(a,b) {
+        return new Date(a.date).getTime() - new Date(b.date).getTime();
+      });
+
+      // Within each cohort, order by week ascending
+      for (let i = 0; i < queryResults.length; i++) {
+        queryResults[i].weeklyData.sort(function(a,b) {
+          return a.week - b.week;
+        });
+      }
+
+      let labels = [
+        'Week of...',
+        'Users in Cohort'
+      ];
+
+      for (let i = 1; i <= NUM_COHORTS; i++) {
+        labels[labels.length] = 'Week ' + i + ' - Cohort Active Up To Now';
+        labels[labels.length] = 'Week ' + i + ' - Active Users';
+        labels[labels.length] = 'Week ' + i + ' - % of Cohort';
+        labels[labels.length] = 'Week ' + i + ' - Interactions';
+        labels[labels.length] = 'Week ' + i + ' - Avg Num Interactions';
+      }
+
+      let rows = [];
+
+      for (let i = 0; i < queryResults.length; i++) {
+        rows[i] = [
+          queryResults[i].date,
+          queryResults[i].cohortSize
+        ]
+
+        for (let j = 0; j < queryResults[i].weeklyData.length; j++) {
+          rows[i][rows[i].length] = queryResults[i].weeklyData[j].totalActive;
+          rows[i][rows[i].length] = queryResults[i].weeklyData[j].activeUsers;
+          rows[i][rows[i].length] = queryResults[i].weeklyData[j].pctOfCohort;
+          rows[i][rows[i].length] = queryResults[i].weeklyData[j].msgsSent;
+          rows[i][rows[i].length] = queryResults[i].weeklyData[j].avgMsgsSent;
+        }
+      }
+
+      let filename = helpers.formatDateForQuery(fromDate) +
+        '-cohort-interactions.csv';
+      helpers.writeToCsv(labels, rows, filename, done);
+    }
+
+    // Get weekly data for the past NUM_COHORTS
+    for (let i = 0; i < NUM_COHORTS; i++) {
+      let cohortDate = new Date(fromDate.getTime());
+      cohortDate.setDate(cohortDate.getDate() - (i * 7));
+
+      // Set date to the Monday of that week
+      let day = cohortDate.getDay();
+      let diff = cohortDate.getDate() - day + (day == 0 ? -6 : 1); // adjust when day is sunday
+      cohortDate.setDate(diff);
+
+      // NUM_COHORTS is also the max number of weeks we can query for
+      for (let j = 1; j <= NUM_COHORTS; j++) {
+        // ... but no need to query for more weeks than the cohort has existed
+        if (j > i + 1) {
+          break;
+        }
+
+        theQuery(cohortDate, j);
+      }
+    }
+  }
+
+  /**
    * Queries for general daily user interactions. This will write a csv file that
    * includes the total number of replies, how many of those replies were 'M',
    * the number of unique users who replied, and the average number of replies.
@@ -60,16 +265,12 @@ class BehaviorTasks {
       dbClient.queryAsync(queryTotal)
         .then(function(results) {
           totalReplies = parseInt(results.rows[0].count);
-
-          console.log(strDate + ': total replies: ' + totalReplies);
         })
         .then(function() {
           return dbClient.queryAsync(queryM);
         })
         .then(function(results) {
           totalRepliesM = parseInt(results.rows[0].count);
-
-          console.log(strDate + ': M replies: ' + totalRepliesM);
         })
         .then(function() {
           return dbClient.queryAsync(queryUniqueUsers);
@@ -80,8 +281,8 @@ class BehaviorTasks {
             avgReplies = (totalReplies / totalUniqueUsers).toFixed(2);
           }
 
-          console.log(strDate + ': Total unique users: ' + totalUniqueUsers);
-          console.log(strDate + ': Avg replies: ' + avgReplies);
+          console.log('%s: Total unique users: %d, Avg replies: %d',
+            strDate, totalUniqueUsers, avgReplies);
 
           queryResults[queryResults.length] = {
             date: strDate,

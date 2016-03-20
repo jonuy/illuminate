@@ -18,12 +18,13 @@ if (argv.help) {
   console.log();
   console.log('Available tasks:');
   console.log();
-  console.log('  active-users       Total active users in recent past');
-  console.log('  cohort-analysis    Churn/retentation data');
-  console.log('  daily-interactions # of interactions daily');
-  console.log('  subscribers        Runs both new-subscribers and total-subscribers');
-  console.log('  new-subscribers    Queries for new recent subscribers');
-  console.log('  total-subscribers  Total # of current subscribers');
+  console.log('  active-users        Total active users in recent past');
+  console.log('  cohort-analysis     Churn/retentation data');
+  console.log('  cohort-interactions Cohort behavior over time');
+  console.log('  daily-interactions  # of interactions daily');
+  console.log('  subscribers         Runs both new-subscribers and total-subscribers');
+  console.log('  new-subscribers     Queries for new recent subscribers');
+  console.log('  total-subscribers   Total # of current subscribers');
   console.log();
   process.exit(0);
 }
@@ -76,6 +77,10 @@ postgres.connectAsync(connectionString)
     if (argsEmptyOrSetTo('cohort-analysis')) {
       retentionTasks.triangleChart('week', 12);
       retentionTasks.triangleChart('month', 6);
+    }
+
+    if (argsEmptyOrSetTo('cohort-interactions')) {
+      behaviorTasks.cohortInteractionsOverTime(date);
     }
 
     if (argsEmptyOrSetTo('daily-interactions')) {
