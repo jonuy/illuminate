@@ -3,13 +3,16 @@
 var Promise = require('bluebird');
 var request = require('request');
 var xml2js = Promise.promisifyAll(require('xml2js'));
-var pg = require('pg');
+var pg = Promise.promisifyAll(require('pg'));
 
 // Time the script starts
 var startTime = (new Date()).getTime();
 
 // Helper var indicating there are no more profiles to sync from the API
 var apiSyncDone = false;
+
+// If set, is added as the `from` query param to the API call
+var queryDate;
 
 // Helper var tracking how many have been read from the API
 var profilesRead = 0;
@@ -23,30 +26,37 @@ var dbConnString = 'postgres://localhost/illuminate';
 var dbTableName = 'profiles';
 
 // Get a pg client from the connection pool
-pg.connect(dbConnString, function(err, client, done) {
+pg.connectAsync(dbConnString)
+  .then(function(client) {
+    dbClient = client;
 
-  var handleError = function(err) {
-    if (! err) return false;
+    let query = 'SELECT * FROM ' + dbTableName +
+      ' ORDER BY updated_at DESC' +
+      ' LIMIT 1';
+    dbClient.queryAsync(query)
+      .then(function(result) {
+        if (typeof result !== 'undefined' && typeof result.rows !== 'undefined'
+            && result.rows.length > 0) {
+          let latest = result.rows[0].updated_at;
+          let latestDate = new Date(latest);
 
-    // An error occurred, remove the client from the connection pool.
-    // A truthy value passed to done will remove the connection from the pool
-    // instead of simply returning it to be reused.
-    // In this case, if we have successfully received a client (truthy)
-    // then it will be removed from the pool.
-    if (client) {
-      done(client);
-    }
+          let month = latestDate.getMonth() + 1;
+          let date = latestDate.getDate();
+          let year = latestDate.getFullYear();
+          queryDate = year + '-' + month + '-' + date + 'T00:00:00';
+        }
 
-    console.log('An error occurred');
-    return true;
-  };
-
-  if (handleError(err)) return;
-
-  // Start API sync at page 1
-  dbClient = client;
-  getProfiles(1);
-});
+        getProfiles(1, queryDate);
+      })
+      .catch(function(err) {
+        console.log(err);
+        process.exit(1);
+      });
+  })
+  .catch(function(err) {
+    console.log(err);
+    process.exit(1);
+  });
 
 var baseUrl = 'https://secure.mcommons.com/api/profiles';
 var options = {
@@ -60,9 +70,14 @@ var options = {
  * API request to get a page of profiles.
  *
  * @param page Specifies page to query for
+ * @param date String Time to start querying for messages. ISO-8601
  */
-var getProfiles = function(page) {
-  var url = baseUrl + '?page=' + page;
+var getProfiles = function(page, date) {
+  var url = baseUrl + '?limit=1000&page=' + page;
+  if (date) {
+    url += '&from=' + date;
+  }
+  console.log('REQUEST: %s', url);
   request.get(url, options, onGetProfiles);
 }
 
@@ -113,21 +128,11 @@ var onGetProfiles = function(err, response, body) {
           let createdAt = profile.created_at[0];
           let updatedAt = profile.updated_at[0];
 
-          let outAtDate = outAt.length > 0 ? new Date(outAt) : '';
-          let createdAtDate = createdAt.length > 0 ? new Date(createdAt) : '';
-          let updatedAtDate = updatedAt.length > 0 ? new Date(updatedAt) : '';
-          // console.log('  -- first:%s | last:%s | phone:%s | city:%s | state:%s | outAt:%s | outSource:%s | sourceType: %s | createdAt:%s | updatedAt:%s',
-          //     first, last, phone, city, state, outAtDate, outSource, sourceType, createdAtDate, updatedAtDate);
-
-          let columnsFormat = 'id, phone_number, source, opted_out_source, city, state';
-          let valuesFormat = '$1, $2, $3, $4, $5, $6';
-          let values = [id, phone, sourceType, outSource, city, state];
-
-          if (createdAt.length > 0) {
-            values[values.length] = createdAt;
-            columnsFormat += ', created_at';
-            valuesFormat += ', $' + values.length;
-          }
+          let columnsFormat = 'id, phone_number, fname, source, ' +
+            'opted_out_source, city, state, created_at, updated_at';
+          let valuesFormat = '$1, $2, $3, $4, $5, $6, $7, $8, $9';
+          let values = [id, phone, first, sourceType, outSource, city, state,
+            createdAt, updatedAt];
 
           if (outAt.length > 0) {
             values[values.length] = outAt;
@@ -139,13 +144,20 @@ var onGetProfiles = function(err, response, body) {
               ' (' + columnsFormat + ')' +
               ' VALUES (' + valuesFormat + ')';
 
+          let callbackData = {
+            id: id,
+            values: values,
+            columnsFormat: columnsFormat,
+            valuesFormat: valuesFormat,
+          };
+
           // Insert values into the database
-          dbClient.query(query, values, onDbQuery);
+          dbClient.query(query, values, onDbQuery.bind(callbackData));
         }
 
         // Get the next page of profiles
         page++;
-        getProfiles(page);
+        getProfiles(page, queryDate);
       });
   }
   else {
@@ -160,12 +172,28 @@ var onGetProfiles = function(err, response, body) {
  * @param result
  */
 var onDbQuery = function(err, result) {
-  profilesProcessed++;
-
   if (err) {
-    console.log('[%d] %s', profilesProcessed, err.detail);
+    // 23505 - duplicate key error. Update the row instead.
+    if (err.code === '23505' && typeof this.columnsFormat !== 'undefined'
+      && typeof this.valuesFormat !== 'undefined'
+      && typeof this.values !== 'undefined'
+      && typeof this.id !== 'undefined') {
+
+      let query = "UPDATE " + dbTableName +
+        " SET (" + this.columnsFormat + ")" +
+        " = (" + this.valuesFormat + ")" +
+        " WHERE id = '" + this.id + "'";
+
+      dbClient.query(query, this.values, onDbQuery);
+    }
+    else {
+      console.log(err);
+      process.exit(1);
+    }
   }
   else {
+    profilesProcessed++;
+
     console.log('[%d] %s %d', profilesProcessed, result.command, result.rowCount);
   }
 
