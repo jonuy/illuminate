@@ -4,6 +4,18 @@ var Promise = require('bluebird');
 var request = require('request');
 var xml2js = Promise.promisifyAll(require('xml2js'));
 var pg = Promise.promisifyAll(require('pg'));
+var argv = require('minimist')(process.argv.slice(2));
+
+/**
+ * If process is run with --help, show this.
+ */
+if (argv.help) {
+  console.log();
+  console.log('  --local  Sync messages data to the local db');
+  console.log('  --aws    Sync messages data to the AWS db');
+  console.log();
+  process.exit(0);
+}
 
 // Flag indicating if API sync is still in progress
 var apiSyncDone = false;
@@ -17,10 +29,37 @@ var messagesProcessed = 0;
 
 // DB client and connection data
 var dbClient;
-var dbConnString = 'postgres://localhost/illuminate';
 var dbTableName = 'messages';
+var dbConnConfig = {
+  database: 'illuminate'
+};
 
-pg.connectAsync(dbConnString)
+if (argv.local) {
+  console.log('Syncing to local db...\n');
+  dbConnConfig.host = 'localhost';
+}
+else if (argv.aws) {
+  console.log('Syncing to AWS db...\n');
+
+  if (typeof process.env.SHINE_API_SYNC_USER === 'undefined' ||
+      typeof process.env.SHINE_API_SYNC_PASSWORD === 'undefined' ||
+      typeof process.env.SHINE_API_SYNC_HOST === 'undefined') {
+    console.log('Environment vars for AWS DB user, password and host must be set.');
+    process.exit(1);
+  }
+
+  dbConnConfig.user = process.env.SHINE_API_SYNC_USER;
+  dbConnConfig.password = process.env.SHINE_API_SYNC_PASSWORD;
+  dbConnConfig.host = process.env.SHINE_API_SYNC_HOST;
+  dbConnConfig.port = process.env.SHINE_API_SYNC_PORT || 5432;
+  dbConnConfig.ssl = process.env.SHINE_API_SYNC_SSL || true;
+}
+else {
+  console.log('No destination flag specified. Defaulting to --local');
+  dbConnConfig.host = 'localhost';
+}
+
+pg.connectAsync(dbConnConfig)
   .then(function(client) {
     dbClient = client;
 
@@ -55,8 +94,8 @@ pg.connectAsync(dbConnString)
 var baseUrl = 'https://secure.mcommons.com/api/messages';
 var options = {
   'auth': {
-    'user': '',
-    'pass': ''
+    'user': process.env.MC_AUTH_USER || '',
+    'pass': process.env.MC_AUTH_PASSWORD || ''
   }
 };
 
@@ -89,7 +128,8 @@ var onGetMessages = function(err, response, body) {
   }
 
   if (response.statusCode != 200) {
-    return;
+    console.log('Abort on error code: ' + response.statusCode);
+    process.exit(1);
   }
 
   // Convert xml to js object
@@ -131,8 +171,14 @@ var onGetMessages = function(err, response, body) {
           ' (' + columnsFormat + ')' +
           ' VALUES (' + valuesFormat + ')';
 
+        let callbackData = {
+          values: values,
+          columnsFormat: columnsFormat,
+          valuesFormat: valuesFormat
+        };
+
         // Insert values into the database
-        dbClient.query(query, values, onDbInsert);
+        dbClient.query(query, values, onDbInsert.bind(callbackData));
       }
 
       // Get the next page of messages
@@ -148,18 +194,35 @@ var onGetMessages = function(err, response, body) {
  * @param result
  */
 var onDbInsert = function(err, result) {
-  messagesProcessed++;
-
   if (err) {
-    console.log('[%d] %s', messagesProcessed, err.detail);
+    // 22001 - value too long error. try again with shorter `body`.
+    if (err.code === '22001' && typeof this.columnsFormat !== 'undefined'
+        && typeof this.valuesFormat !== 'undefined'
+        && typeof this.values !== 'undefined') {
+      // We're just gonna assume it's the body that's too long. `body` is the
+      // 4th item in the values array.
+      let values = this.values;
+      values[3] = values[3].substr(0, 160);
+      let query = 'INSERT INTO ' + dbTableName +
+          ' (' + this.columnsFormat + ')' +
+          ' VALUES (' + this.valuesFormat + ')';
 
-    // 23505 - duplicate key error. this is ok.
-    if (err.code !== '23505') {
+      console.log('... Trying again with a shortened body value.');
+      dbClient.query(query, values, onDbInsert);
+    }
+    // 23505 - duplicate key error. If it's not that, then error out.
+    else if (err.code !== '23505') {
       console.log(err);
       process.exit(1);
     }
+    else {
+      messagesProcessed++;
+      console.log('[%d] %s - %s', messagesProcessed, err.code, err.detail);
+    }
   }
   else {
+    messagesProcessed++;
+
     console.log('[%d] %s %d', messagesProcessed, result.command, result.rowCount);
   }
 

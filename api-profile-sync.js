@@ -4,6 +4,18 @@ var Promise = require('bluebird');
 var request = require('request');
 var xml2js = Promise.promisifyAll(require('xml2js'));
 var pg = Promise.promisifyAll(require('pg'));
+var argv = require('minimist')(process.argv.slice(2));
+
+/**
+ * If process is run with --help, show this.
+ */
+if (argv.help) {
+  console.log();
+  console.log('  --local  Sync messages data to the local db');
+  console.log('  --aws    Sync messages data to the AWS db');
+  console.log();
+  process.exit(0);
+}
 
 // Time the script starts
 var startTime = (new Date()).getTime();
@@ -22,11 +34,39 @@ var profilesProcessed = 0;
 
 // DB client and connection string
 var dbClient;
-var dbConnString = 'postgres://localhost/illuminate';
 var dbTableName = 'profiles';
+var dbConnConfig = {
+  database: 'illuminate'
+};
+
+
+if (argv.local) {
+  console.log('Syncing to local db...\n');
+  dbConnConfig.host = 'localhost';
+}
+else if (argv.aws) {
+  console.log('Syncing to AWS db...\n');
+
+  if (typeof process.env.SHINE_API_SYNC_USER === 'undefined' ||
+      typeof process.env.SHINE_API_SYNC_PASSWORD === 'undefined' ||
+      typeof process.env.SHINE_API_SYNC_HOST === 'undefined') {
+    console.log('Environment vars for AWS DB user, password and host must be set.');
+    process.exit(1);
+  }
+
+  dbConnConfig.user = process.env.SHINE_API_SYNC_USER;
+  dbConnConfig.password = process.env.SHINE_API_SYNC_PASSWORD;
+  dbConnConfig.host = process.env.SHINE_API_SYNC_HOST;
+  dbConnConfig.port = process.env.SHINE_API_SYNC_PORT || 5432;
+  dbConnConfig.ssl = process.env.SHINE_API_SYNC_SSL || true;
+}
+else {
+  console.log('No destination flag specified. Defaulting to --local');
+  dbConnConfig.host = 'localhost';
+}
 
 // Get a pg client from the connection pool
-pg.connectAsync(dbConnString)
+pg.connectAsync(dbConnConfig)
   .then(function(client) {
     dbClient = client;
 
@@ -61,8 +101,8 @@ pg.connectAsync(dbConnString)
 var baseUrl = 'https://secure.mcommons.com/api/profiles';
 var options = {
   'auth': {
-    'user': '',
-    'pass': ''
+    'user': process.env.MC_AUTH_USER || '',
+    'pass': process.env.MC_AUTH_PASSWORD || ''
   }
 };
 
@@ -162,6 +202,7 @@ var onGetProfiles = function(err, response, body) {
   }
   else {
     console.log('Abort on error code: ' + response.statusCode);
+    process.exit(1);
   }
 };
 
