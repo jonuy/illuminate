@@ -14,7 +14,7 @@ It's probably easiest to create a couple scripts in your root to run the sync sc
 export MC_AUTH_USER="MOBILE COMMONS USER"
 export MC_AUTH_PASSWORD="MOBILE COMMONS PASSWORD"
 
-node api-profile-sync.js --local
+node api-profiles-sync.js --local
 node api-messages-sync.js --local
 ```
 
@@ -29,7 +29,7 @@ export SHINE_API_SYNC_HOST="DB HOST"
 export SHINE_API_SYNC_PORT=DB_PORT_NUMBER     # Number. Defaults to 5432
 export SHINE_API_SYNC_SSL=DB_SSL              # Boolean. Defaults to true
 
-node api-profile-sync.js --aws
+node api-profiles-sync.js --aws
 node api-messages-sync.js --aws
 ```
 
