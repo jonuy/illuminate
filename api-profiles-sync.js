@@ -180,6 +180,32 @@ var onGetProfiles = function(err, response, body) {
             valuesFormat += ', $' + values.length;
           }
 
+          // Parse custom columns and any we're interested in
+          for (let j = 0; j < profile.custom_columns[0].custom_column.length; j++) {
+            let cc = profile.custom_columns[0].custom_column[j];
+            let ccName = cc.$.name;
+            let ccValue = typeof cc._ === 'string' ? cc._.trim() : null;
+
+            let addValue = false;
+            let dbColumnName = '';
+            if (ccName === 'alt_source' && ccValue !== null) {
+              dbColumnName = 'alt_source';
+            }
+            else if (ccName === 'Birthday' && ccValue !== null) {
+              dbColumnName = 'birthday';
+            }
+            else if (ccName === 'niche_college_major' && ccValue !== null) {
+              dbColumnName = 'college_major';
+            }
+
+            if (dbColumnName.length > 0) {
+              values[values.length] = ccValue;
+              columnsFormat += ', ' + dbColumnName;
+              valuesFormat += ', $' + values.length;
+            }
+          }
+
+          // Setup the query and data for the callback
           let query = 'INSERT INTO ' + dbTableName +
               ' (' + columnsFormat + ')' +
               ' VALUES (' + valuesFormat + ')';
