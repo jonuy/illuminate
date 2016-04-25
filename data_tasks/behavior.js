@@ -371,7 +371,8 @@ class BehaviorTasks {
       let messagesQuery = "SELECT COUNT(*) FROM (" +
         "SELECT DISTINCT ON (phone_number) * FROM messages " +
         "WHERE received_at::date < " + endDate + " " +
-        "AND received_at::date >= " + startDate +
+        "AND received_at::date >= " + startDate + " " +
+        "AND type='reply'" +
       ") AS tmp";
 
       console.log("[pct-interactions-" + type + "ly] profiles query iteration: " + counter);
