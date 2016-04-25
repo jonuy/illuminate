@@ -22,6 +22,7 @@ if (argv.help) {
   console.log('  cohort-analysis     Churn/retentation data');
   console.log('  cohort-interactions Cohort behavior over time');
   console.log('  daily-interactions  # of interactions daily');
+  console.log('  pct-interactions    Percentage of subscribers interacting week-to-week/month-to-month');
   console.log('  growth              Total subscriber count from week-to-week/month-to-month');
   console.log('  subscribers         Runs both new-subscribers and total-subscribers');
   console.log('  new-subscribers     Queries for new recent subscribers');
@@ -91,6 +92,11 @@ postgres.connectAsync(connectionString)
 
     if (argsEmptyOrSetTo('daily-interactions')) {
       behaviorTasks.dailyInteractions(date, 14);
+    }
+
+    if (argsEmptyOrSetTo('pct-interactions')) {
+      behaviorTasks.pctInteractions('month', 7);
+      behaviorTasks.pctInteractions('week', 20);
     }
 
     if (argsEmptyOrSetTo('active-users')) {

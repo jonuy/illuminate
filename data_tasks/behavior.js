@@ -343,6 +343,89 @@ class BehaviorTasks {
   }
 
   /**
+   * Generates a csv showing the percent of subscribers who have interacted
+   * over a given time period.
+   *
+   * Output filename: {date}-{type}-ly-pct-ative.csv
+   *
+   * @param type Type of interval. Either 'month' or 'week'
+   * @param iterations Number of intervals starting from today to query against
+   * @param done Callback on complete
+   */
+  pctInteractions(type, iterations, done) {
+    var counter = 0
+    var startInterval = 1;
+    var dbClient = this.client;
+    var queryResults = [];
+
+    function runQuery() {
+      let endDateInterval = startInterval - counter;
+      let startDateInterval = endDateInterval - 1;
+      let endDate = "date_trunc('" + type + "', now()::date + interval'" + endDateInterval + " " + type + "')";
+      let startDate = "date_trunc('" + type + "', now()::date + interval'" + startDateInterval + " " + type + "')";
+      let profilesQuery = "SELECT " + startDate + " AS start_date, " +
+        endDate + " AS end_date, " +
+        "COUNT(*) FROM profiles " +
+        "WHERE created_at::date < " + endDate + " " +
+        "AND (opted_out_at is null OR opted_out_at::date > " + endDate + ")";
+      let messagesQuery = "SELECT COUNT(*) FROM (" +
+        "SELECT DISTINCT ON (phone_number) * FROM messages " +
+        "WHERE received_at::date < " + endDate + " " +
+        "AND received_at::date >= " + startDate +
+      ") AS tmp";
+
+      console.log("[pct-interactions-" + type + "ly] profiles query iteration: " + counter);
+      dbClient.queryAsync(profilesQuery)
+        .then(function(result) {
+          queryResults[counter] = {
+            startDate: helpers.formatDateForQuery(new Date(result.rows[0].start_date)),
+            endDate: helpers.formatDateForQuery(new Date(result.rows[0].end_date)),
+            subscribers: parseInt(result.rows[0].count)
+          };
+
+          console.log("[pct-interactions-" + type + "ly] messages query iteration: " + counter);
+          return dbClient.queryAsync(messagesQuery)
+        })
+        .then(function(result) {
+          queryResults[counter].active = parseInt(result.rows[0].count);
+
+          counter++;
+          if (counter < iterations) {
+            runQuery();
+          }
+          else {
+            onFinish();
+          }
+        })
+        .catch(function(err) {
+          console.log(err);
+        })
+    }
+
+    function onFinish() {
+      let labels = ['Start Date', 'End Date', 'Subscribers', 'Active', 'Pct Active'];
+      let rows = [];
+
+      for (let i = 0; i < queryResults.length; i++) {
+        let resultsIdx = queryResults.length - 1 - i;
+        rows[i] = [
+          queryResults[resultsIdx].startDate,
+          queryResults[resultsIdx].endDate,
+          queryResults[resultsIdx].subscribers,
+          queryResults[resultsIdx].active,
+          (queryResults[resultsIdx].active / queryResults[resultsIdx].subscribers) * 100
+        ];
+      }
+
+      let filename = helpers.formatDateForQuery(new Date()) +
+        '-' + type + 'ly-pct-active.csv';
+      helpers.writeToCsv(labels, rows, filename, done);
+    }
+
+    runQuery();
+  }
+
+  /**
    * Queries for the total number of users who have been active over a period
    * of time.
    *
