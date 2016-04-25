@@ -11,8 +11,9 @@ var argv = require('minimist')(process.argv.slice(2));
  */
 if (argv.help) {
   console.log();
-  console.log('  --local  Sync messages data to the local db');
-  console.log('  --aws    Sync messages data to the AWS db');
+  console.log('  --local  Sync data to the local db');
+  console.log('  --aws    Sync data to the AWS db');
+  console.log('  --allthethings Sync all the data from the start of time');
   console.log();
   process.exit(0);
 }
@@ -75,8 +76,11 @@ pg.connectAsync(dbConnConfig)
       ' LIMIT 1';
     dbClient.queryAsync(query)
       .then(function(result) {
-        if (typeof result !== 'undefined' && typeof result.rows !== 'undefined'
+        if (! argv.allthethings
+            && typeof result !== 'undefined'
+            && typeof result.rows !== 'undefined'
             && result.rows.length > 0) {
+
           let latest = result.rows[0].updated_at;
           let latestDate = new Date(latest);
 
@@ -84,6 +88,7 @@ pg.connectAsync(dbConnConfig)
           let date = latestDate.getDate();
           let year = latestDate.getFullYear();
           queryDate = year + '-' + month + '-' + date + 'T00:00:00';
+
         }
 
         getProfiles(1, queryDate);
@@ -173,6 +178,12 @@ var onGetProfiles = function(err, response, body) {
           let valuesFormat = '$1, $2, $3, $4, $5, $6, $7, $8, $9';
           let values = [id, phone, first, sourceType, outSource, city, state,
             createdAt, updatedAt];
+
+          if (sourceType === 'Tell A Friend') {
+            values[values.length] = profile.source[0].$.sender;
+            columnsFormat += ', referred_by';
+            valuesFormat += ', $' + values.length;
+          }
 
           if (outAt.length > 0) {
             values[values.length] = outAt;
