@@ -21,7 +21,7 @@ class BehaviorTasks {
    * @param done Callback on complete
    */
   cohortInteractionsOverTime(fromDate, done) {
-    const NUM_COHORTS = 9;
+    const NUM_COHORTS = 12;
     const dbClient = this.client;
     var numProcessed = 0;
     var queryResults = [];

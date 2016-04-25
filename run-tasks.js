@@ -22,6 +22,7 @@ if (argv.help) {
   console.log('  cohort-analysis     Churn/retentation data');
   console.log('  cohort-interactions Cohort behavior over time');
   console.log('  daily-interactions  # of interactions daily');
+  console.log('  growth              Total subscriber count from week-to-week/month-to-month');
   console.log('  subscribers         Runs both new-subscribers and total-subscribers');
   console.log('  new-subscribers     Queries for new recent subscribers');
   console.log('  total-subscribers   Total # of current subscribers');
@@ -74,8 +75,13 @@ postgres.connectAsync(connectionString)
       subscriberTasks.queryNewSubscribers(today, '3 months');
     }
 
+    if (argsEmptyOrSetTo('growth')) {
+      subscriberTasks.queryMonthlyGrowth(7);
+      subscriberTasks.queryWeeklyGrowth(20);
+    }
+
     if (argsEmptyOrSetTo('cohort-analysis')) {
-      retentionTasks.triangleChart('week', 12);
+      retentionTasks.triangleChart('week', 15);
       retentionTasks.triangleChart('month', 6);
     }
 
@@ -84,7 +90,7 @@ postgres.connectAsync(connectionString)
     }
 
     if (argsEmptyOrSetTo('daily-interactions')) {
-      behaviorTasks.dailyInteractions(date, 7);
+      behaviorTasks.dailyInteractions(date, 14);
     }
 
     if (argsEmptyOrSetTo('active-users')) {
