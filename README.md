@@ -1,4 +1,9 @@
-Illuminate is a small set of scripts that helps us gather and process user data.
+> ## illuminate
+> \i-ˈlü-mə-nət\
+> 
+> : to shine light on (something)
+
+Illuminate is a small set of scripts that helps us gather and process data to better understand user growth and behavior.
 
 ## Requirements
 
