@@ -172,12 +172,13 @@ var onGetProfiles = function(err, response, body) {
           let sourceType = profile.source[0].$.type;
           let createdAt = profile.created_at[0];
           let updatedAt = profile.updated_at[0];
+          let status = profile.status[0];
 
           let columnsFormat = 'id, phone_number, fname, source, ' +
-            'opted_out_source, city, state, created_at, updated_at';
-          let valuesFormat = '$1, $2, $3, $4, $5, $6, $7, $8, $9';
+            'opted_out_source, city, state, created_at, updated_at, status';
+          let valuesFormat = '$1, $2, $3, $4, $5, $6, $7, $8, $9, $10';
           let values = [id, phone, first, sourceType, outSource, city, state,
-            createdAt, updatedAt];
+            createdAt, updatedAt, status];
 
           if (sourceType === 'Tell A Friend') {
             values[values.length] = profile.source[0].$.sender;
