@@ -239,6 +239,7 @@ class BehaviorTasks {
     function theDailyQuery(date) {
       let totalReplies = 0;
       let totalRepliesM = 0;
+      let totalSubscribers = 0;
       let totalUniqueUsers = 0;
       let avgReplies = 0;
       let strDate = helpers.formatDateForQuery(date);
@@ -262,6 +263,10 @@ class BehaviorTasks {
             "AND type='reply'" +
         ") AS tmp";
 
+      let querySubscribers = "SELECT COUNT(*) FROM profiles " +
+        "WHERE created_at <= date '" + strDate + "' " +
+        "AND (opted_out_at is null OR opted_out_at::date > '" + strDate + "')";
+
       dbClient.queryAsync(queryTotal)
         .then(function(results) {
           totalReplies = parseInt(results.rows[0].count);
@@ -273,6 +278,12 @@ class BehaviorTasks {
           totalRepliesM = parseInt(results.rows[0].count);
         })
         .then(function() {
+          return dbClient.queryAsync(querySubscribers);
+        })
+        .then(function(results) {
+          totalSubscribers = parseInt(results.rows[0].count);
+        })
+        .then(function() {
           return dbClient.queryAsync(queryUniqueUsers);
         })
         .then(function(results) {
@@ -281,15 +292,17 @@ class BehaviorTasks {
             avgReplies = (totalReplies / totalUniqueUsers).toFixed(2);
           }
 
-          console.log('%s: Total unique users: %d, Avg replies: %d',
-            strDate, totalUniqueUsers, avgReplies);
+          console.log('%s: Total unique users: %d, Avg replies: %d, Total subscribers: %d',
+            strDate, totalUniqueUsers, avgReplies, totalSubscribers);
 
           queryResults[queryResults.length] = {
             date: strDate,
             replies: totalReplies,
             m: totalRepliesM,
             users: totalUniqueUsers,
-            avgReplies: avgReplies
+            avgReplies: avgReplies,
+            subscribers: totalSubscribers,
+            pctActiveUsers: ((totalUniqueUsers / totalSubscribers) * 100).toFixed(2),
           };
 
           numProcessed++;
@@ -314,8 +327,10 @@ class BehaviorTasks {
         'Date',
         'Total Replies',
         '"M" Replies',
-        '# of Unique Users',
-        'Average # of Replies Per User'
+        'Active Users',
+        'Average # of Replies Per User',
+        'Total Users',
+        'Pct. Active Users'
         ];
 
       let rows = [];
@@ -325,7 +340,9 @@ class BehaviorTasks {
           queryResults[i].replies,
           queryResults[i].m,
           queryResults[i].users,
-          queryResults[i].avgReplies
+          queryResults[i].avgReplies,
+          queryResults[i].subscribers,
+          queryResults[i].pctActiveUsers
           ];
       }
 
