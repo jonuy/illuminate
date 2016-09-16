@@ -45,7 +45,7 @@ class BehaviorTasks {
         "AND profiles.created_at < (date_trunc('week', date '" + strDate + "') + interval '1 week')";
 
       let conditionValidReply =
-        "messages.type='reply' AND LOWER(messages.body)=LOWER('M')";
+        "messages.type='reply' AND (messages.body='M' or messages.body='m')";
 
       let conditionReplyTime =
         "messages.received_at <= profiles.created_at + interval '" + weekNum + " week' " +
@@ -83,26 +83,34 @@ class BehaviorTasks {
           "AND " + conditionReplyTime +
         ") AS tmp";
 
+      console.log(`[${weekNum}] QUERY USERS: ${queryUsers}`);
       dbClient.queryAsync(queryUsers)
         .then(function(results) {
+          console.log(`   users --> ${results.rows[0].count}`);
           cohortUsers = parseInt(results.rows[0].count);
         })
         .then(function() {
+          console.log(`[${weekNum}] QUERY WEEKLY USERS: ${queryWeeklyUsers}`);
           return dbClient.queryAsync(queryWeeklyUsers);
         })
         .then(function(results) {
+          console.log(`   weekly --> ${results.rows[0].count}`);
           weeklyUsers = parseInt(results.rows[0].count);
         })
         .then(function() {
+          console.log(`[${weekNum}] QUERY TOTAL ACTIVE: ${queryTotalActive}`);
           return dbClient.queryAsync(queryTotalActive);
         })
         .then(function(results) {
+          console.log(`   active --> ${results.rows[0].count}`);
           totalActive = parseInt(results.rows[0].count);
         })
         .then(function() {
+          console.log(`[${weekNum}] QUERY WEEKLY MESSAGES: ${queryWeeklyMessages}`);
           return dbClient.queryAsync(queryWeeklyMessages);
         })
         .then(function(results) {
+          console.log(`   messages --> ${results.rows[0].count}`);
           weeklyMessages = parseInt(results.rows[0].count);
 
           process.stdout.write('.');
@@ -252,7 +260,7 @@ class BehaviorTasks {
       let queryM = "SELECT COUNT(*) FROM messages " +
         "WHERE received_at >= date '" + strDate + "' " +
           "AND received_at < (date '" + strDate + "' + interval '1 day') " +
-          "AND type='reply' AND LOWER(body)=LOWER('M')";
+          "AND type='reply' AND (body='M' OR body='m')";
 
       let queryUniqueUsers = "SELECT COUNT(*) FROM " +
         "(" +
