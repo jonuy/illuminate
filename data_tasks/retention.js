@@ -43,7 +43,7 @@ class RetentionTasks {
       var dateString;
       var rowNumber = range - timeAgoStart;
       var queryForDate = "SELECT date_trunc('" + interval + "', current_date) - interval '" + timeAgoStart + " " + interval + "'";
- 
+
       dbClient.queryAsync(queryForDate)
         .then(function(results) {
           dateString = convertDateToHumanReadable(results.rows[0]['?column?']);
@@ -55,7 +55,8 @@ class RetentionTasks {
           let createdEnd = createdStart - 1;
           var queryForNewSubscribers = "SELECT COUNT(*) FROM profiles " +
             "WHERE created_at >= (date_trunc('" + interval + "', current_date) - interval '" + createdStart + " " + interval + "') " +
-              "AND created_at < (date_trunc('" + interval + "', current_date) - interval '" + createdEnd + " " + interval + "')";
+              "AND created_at < (date_trunc('" + interval + "', current_date) - interval '" + createdEnd + " " + interval + "') " +
+              "AND opted_out_source != 'No confirmed subscriptions' AND opted_out_source != 'Hard bounce'";
 
           return dbClient.queryAsync(queryForNewSubscribers);
         })
@@ -69,7 +70,8 @@ class RetentionTasks {
               "WHERE created_at >= (date_trunc('" + interval + "', current_date) - interval '" + createdStart + " " + interval + "') " +
               "AND created_at < (date_trunc('" + interval + "', current_date) - interval '" + createdEnd + " " + interval + "') " +
               "AND opted_out_at >= (date_trunc('" + interval + "', current_date) - interval '" + outStart + " " + interval + "') " +
-              "AND opted_out_at < (date_trunc('" + interval + "', current_date) - interval '" + outEnd + " " + interval + "')";
+              "AND opted_out_at < (date_trunc('" + interval + "', current_date) - interval '" + outEnd + " " + interval + "') " +
+              "AND opted_out_source != 'No confirmed subscriptions' AND opted_out_source != 'Hard bounce'";
 
             dbClient.queryAsync(query)
               .then(function(results) {
@@ -179,7 +181,7 @@ function writeCsvFile(labels, rows, interval) {
         csvDataRaw += ',';
         csvDataPct += ',';
       }
-      // 
+      //
       else if (i != 0) {
         let totalNew = parseInt(results[i][1]);
         let totalOut = 0;
